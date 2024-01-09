@@ -1,6 +1,11 @@
+# Main site
 node_modules
 
 /.cache
 /build
 /public/build
 .env
+
+# Backend
+/backend/target
+/backend/Cargo.lock
