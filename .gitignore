@@ -9,3 +9,5 @@ node_modules
 # Backend
 /backend/target
 /backend/Cargo.lock
+/backend/.sqlx
+/backend/queries
