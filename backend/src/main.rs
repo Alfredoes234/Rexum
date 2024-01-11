@@ -1,24 +1,37 @@
-use anyhow::{Error, Result};
 use axum::{
-    debug_handler,
-    extract::{Extension, Path, Query, FromRef, FromRequestParts},
-    http::StatusCode,
+    extract::{Path, Query, State},
     middleware,
-    response::{Html,  Response},
+    response::{Html, Response},
     routing::{get, post},
     Json, Router,
 };
+use dotenv::dotenv;
 use serde::Deserialize;
-use serde_json::{json, Value};
+// use serde_json::{json, Value};
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::MySqlPool;
+use std::env;
+#[derive(Clone)]
+struct AppState {
+    pool: MySqlPool,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL not set");
+    let pool = MySqlPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .unwrap();
+    let state = AppState { pool };
     // build our application with a route
     let app = Router::new()
-        .merge(routes())
-        .layer(middleware::map_response(main_response_mapper));
+        .route("/", get(index))
+        .route("/api/user_a", post(add_user))
+        .layer(middleware::map_response(main_response_mapper))
+        .with_state(state);
     // run it
     let listener = tokio::net::TcpListener::bind("localhost:8080")
         .await
@@ -30,25 +43,10 @@ async fn main() -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-async fn pool() -> MySqlPool {
-    let pool = MySqlPoolOptions::new()
-        .max_connections(5)
-        .connect("mysql://root:root@localhost/main")
-        .await
-        .unwrap();
-    return pool;
-}
-
 async fn main_response_mapper(res: Response) -> Response {
     println!("{:<12} - main_response_mapper", "RES_MAPPER");
     println!("{res:?}");
     res
-}
-
-fn routes() -> Router {
-    Router::new()
-        .route("/", get(index))
-        .route("/api/user_a", post(add_user))
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -71,20 +69,18 @@ struct NewUser {
 }
 
 async fn add_user(
+    State(pool): State<AppState>,
     Json(params): Json<NewUser>,
 ) -> Json<UserBody<User>> {
-    let pool = pool().await;
     println!("{params:?}");
-    let result = sqlx::query(
-        "
+    let result = sqlx::query!(
+        r#"
         INSERT INTO Users(name, email, password)
         VALUES (?, ?, ?);
-        ",
+        "#,
+        params.name, params.email, params.password,
     )
-    .bind(&params.name)
-    .bind(&params.email)
-    .bind(&params.password)
-    .execute(&pool)
+    .execute(&pool.pool)
     .await;
 
     match result {
