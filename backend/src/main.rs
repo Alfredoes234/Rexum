@@ -1,19 +1,46 @@
+use serde::{Serialize, Deserialize};
 use axum::{
-    extract::{Path, Query, State},
+    extract::State,
     middleware,
     response::{Html, Response},
     routing::{get, post},
     Json, Router,
 };
 use dotenv::dotenv;
-use serde::Deserialize;
 // use serde_json::{json, Value};
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::MySqlPool;
 use std::env;
+
 #[derive(Clone)]
 struct AppState {
     pool: MySqlPool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UserBody<T> {
+    user: T,
+}
+
+#[derive(Serialize, Deserialize)]
+struct User {
+    name: Option<String>,
+    email: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NewUser {
+    name: Option<String>,
+    email: String,
+    password: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DeleteUser {
+    id: u64,
+    email: String,
+
 }
 
 #[tokio::main]
@@ -49,25 +76,6 @@ async fn main_response_mapper(res: Response) -> Response {
     res
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct UserBody<T> {
-    user: T,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct User {
-    name: Option<String>,
-    email: String,
-    password: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct NewUser {
-    name: Option<String>,
-    email: String,
-    password: String,
-}
-
 async fn add_user(
     State(pool): State<AppState>,
     Json(params): Json<NewUser>,
@@ -91,8 +99,12 @@ async fn add_user(
                 password: params.password,
             },
         }),
-        Err(_) => panic!(),
+        Err(e) => panic!("{e:?}"),
     }
+}
+
+async fn delete_user(State(pool): State<AppState>, Json(params): Json<DeleteUser>) {
+
 }
 
 async fn index() -> Html<&'static str> {
