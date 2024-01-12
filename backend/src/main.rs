@@ -1,4 +1,3 @@
-use serde::{Serialize, Deserialize};
 use axum::{
     extract::State,
     middleware,
@@ -9,39 +8,10 @@ use axum::{
 use dotenv::dotenv;
 // use serde_json::{json, Value};
 use sqlx::mysql::MySqlPoolOptions;
-use sqlx::MySqlPool;
 use std::env;
 
-#[derive(Clone)]
-struct AppState {
-    pool: MySqlPool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct UserBody<T> {
-    user: T,
-}
-
-#[derive(Serialize, Deserialize)]
-struct User {
-    name: Option<String>,
-    email: String,
-    password: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct NewUser {
-    name: Option<String>,
-    email: String,
-    password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DeleteUser {
-    id: u64,
-    email: String,
-
-}
+mod structs;
+use structs::*;
 
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
@@ -56,7 +26,8 @@ async fn main() -> Result<(), sqlx::Error> {
     // build our application with a route
     let app = Router::new()
         .route("/", get(index))
-        .route("/api/user_a", post(add_user))
+        .route("/api/usera", post(add_user))
+        .route("/api/userd", post(delete_user))
         .layer(middleware::map_response(main_response_mapper))
         .with_state(state);
     // run it
@@ -78,7 +49,7 @@ async fn main_response_mapper(res: Response) -> Response {
 
 async fn add_user(
     State(pool): State<AppState>,
-    Json(params): Json<NewUser>,
+    Json(params): Json<User>,
 ) -> Json<UserBody<User>> {
     println!("{params:?}");
     let result = sqlx::query!(
@@ -86,7 +57,9 @@ async fn add_user(
         INSERT INTO Users(name, email, password)
         VALUES (?, ?, ?);
         "#,
-        params.name, params.email, params.password,
+        params.name,
+        params.email,
+        params.password,
     )
     .execute(&pool.pool)
     .await;
@@ -103,7 +76,26 @@ async fn add_user(
     }
 }
 
-async fn delete_user(State(pool): State<AppState>, Json(params): Json<DeleteUser>) {
+async fn delete_user(State(pool): State<AppState>, Json(params): Json<Id>) -> Json<UserBody<Id>> {
+    println!("{params:?}");
+    let result = sqlx::query!(
+        r#"
+        DELETE FROM Users
+        WHERE id = (?)
+        "#,
+        params.id,
+    )
+    .execute(&pool.pool)
+    .await;
+
+    match result {
+        Ok(_) => Json(UserBody {
+            user: Id {
+                id: params.id,
+            },
+        }),
+        Err(e) => panic!("{e:?}"),
+    }
 
 }
 
