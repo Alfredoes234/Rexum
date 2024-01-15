@@ -5,10 +5,16 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+
+
 use dotenv::dotenv;
+use hashing::verify_password;
 // use serde_json::{json, Value};
 use sqlx::mysql::MySqlPoolOptions;
 use std::env;
+
+mod hashing;
+use crate::hashing::hash_password;
 
 mod structs;
 use structs::*;
@@ -28,6 +34,7 @@ async fn main() -> Result<(), sqlx::Error> {
         .route("/", get(index))
         .route("/api/usera", post(add_user))
         .route("/api/userd", post(delete_user))
+        .route("/api/login", post(login))
         .layer(middleware::map_response(main_response_mapper))
         .with_state(state);
     // run it
@@ -52,6 +59,8 @@ async fn add_user(
     Json(params): Json<User>,
 ) -> Json<UserBody<User>> {
     println!("{params:?}");
+    let hashed_pwd = hash_password(params.password);
+    let hashed_password = hashed_pwd.map_err(|e| e.to_string()).unwrap();
     let result = sqlx::query!(
         r#"
         INSERT INTO Users(name, email, password)
@@ -59,7 +68,7 @@ async fn add_user(
         "#,
         params.name,
         params.email,
-        params.password,
+        hashed_password,
     )
     .execute(&pool.pool)
     .await;
@@ -69,7 +78,7 @@ async fn add_user(
             user: User {
                 name: params.name,
                 email: params.email,
-                password: params.password,
+                password: hashed_password,
             },
         }),
         Err(e) => panic!("{e:?}"),
@@ -97,6 +106,41 @@ async fn delete_user(State(pool): State<AppState>, Json(params): Json<Id>) -> Js
         Err(e) => panic!("{e:?}"),
     }
 
+}
+
+async fn login(
+    State(pool): State<AppState>,
+    Json(params): Json<Login>
+) -> Json<UserBody<Login>> {
+    let result = sqlx::query!(
+        r#"
+            SELECT email, password
+            FROM Users
+            WHERE email = ?;
+            "#,
+            params.email
+        )
+        .fetch_one(&pool.pool)
+        .await;
+
+    let body = result.as_ref().unwrap();
+    let password = body.password.as_ref().unwrap().to_string();
+    let email = body.email.as_ref().unwrap().to_string();
+
+    let chec = verify_password(params.password, &password);
+
+    match result {
+        Ok(_) => {
+            Json(UserBody {
+                user: Login {
+                    email: email,
+                    password: password,
+                    verify: Some(chec)
+                }
+            })
+        }
+        Err(e) => panic!("{e:?}"),
+    }
 }
 
 async fn index() -> Html<&'static str> {
