@@ -5,8 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-
-
+use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::time::Duration};
 use dotenv::dotenv;
 use hashing::verify_password;
 // use serde_json::{json, Value};
@@ -19,8 +18,11 @@ use crate::hashing::hash_password;
 mod structs;
 use structs::*;
 
+const AUTH_KEY: &str = "auth";
+
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
+    // Database stuff
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = MySqlPoolOptions::new()
@@ -29,22 +31,28 @@ async fn main() -> Result<(), sqlx::Error> {
         .await
         .unwrap();
     let state = AppState { pool };
-    // build our application with a route
+    // Layers
+    //let session_store = MemoryStore::default();
+    //let session_layer = SessionManagerLayer::new(session_store)
+    //    .with_secure(true)
+    //    .with_expiry(Expiry::OnInactivity(Duration::seconds(2700)));
+    // Build our application with a route
     let app = Router::new()
         .route("/", get(index))
         .route("/api/usera", post(add_user))
         .route("/api/userd", post(delete_user))
         .route("/api/login", post(login))
         .layer(middleware::map_response(main_response_mapper))
+    //    .layer(session_layer)
         .with_state(state);
-    // run it
+    // Run it
     let listener = tokio::net::TcpListener::bind("localhost:8080")
         .await
         .unwrap();
     println!("listening on http://{}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
 
-    // Queries
+    // Ok
     Ok(())
 }
 
@@ -134,8 +142,7 @@ async fn login(
             Json(UserBody {
                 user: Login {
                     email: email,
-                    password: password,
-                    verify: Some(chec)
+                    password: password
                 }
             })
         }

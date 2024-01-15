@@ -1,6 +1,5 @@
 use serde::{Serialize, Deserialize};
 use sqlx::MySqlPool;
-use sqlx::FromRow;
 
 
 #[derive(Clone)]
@@ -33,8 +32,7 @@ pub struct Email {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Login {
     pub email: String,
-    pub password: String,
-    pub verify: Option<bool>
+    pub password: String
 }
 
 
