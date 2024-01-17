@@ -3,33 +3,34 @@ use axum::{
     middleware,
     response::{Html, Response},
     routing::{get, post},
-    Json, Router,
+    Json, Router, body::{Body, self}, http::StatusCode,
 };
 use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::time::Duration};
 use dotenv::dotenv;
-use hashing::verify_password;
 // use serde_json::{json, Value};
 use sqlx::mysql::MySqlPoolOptions;
 use std::env;
 
 mod hashing;
-use crate::hashing::hash_password;
+use crate::hashing::{hash_password, verify_password};
 
 mod structs;
 use structs::*;
+use crate::structs::{AppState, Login, UserBody};
 
-const AUTH_KEY: &str = "auth";
+// const AUTH_KEY: &str = "auth";
+
+use anyhow::{Result, Error};
 
 #[tokio::main]
-async fn main() -> Result<(), sqlx::Error> {
+async fn main() -> Result<(), Error> {
     // Database stuff
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = MySqlPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
-        .await
-        .unwrap();
+        .await?;
     let state = AppState { pool };
     // Layers
     //let session_store = MemoryStore::default();
@@ -47,14 +48,13 @@ async fn main() -> Result<(), sqlx::Error> {
         .with_state(state);
     // Run it
     let listener = tokio::net::TcpListener::bind("localhost:8080")
-        .await
-        .unwrap();
+        .await?;
     println!("listening on http://{}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await?;
 
-    // Ok
     Ok(())
 }
+
 
 async fn main_response_mapper(res: Response) -> Response {
     println!("{:<12} - main_response_mapper", "RES_MAPPER");
@@ -66,9 +66,11 @@ async fn add_user(
     State(pool): State<AppState>,
     Json(params): Json<User>,
 ) -> Json<UserBody<User>> {
-    println!("{params:?}");
-    let hashed_pwd = hash_password(params.password);
-    let hashed_password = hashed_pwd.map_err(|e| e.to_string()).unwrap();
+    // println!("{params:?}");
+    let hashed_pwd = match hash_password(params.password) {
+        Ok(password) => password,
+        Err(err) => panic!("Error: {}", err.to_string()),
+    };
     let result = sqlx::query!(
         r#"
         INSERT INTO Users(name, email, password)
@@ -76,7 +78,7 @@ async fn add_user(
         "#,
         params.name,
         params.email,
-        hashed_password,
+        hashed_pwd,
     )
     .execute(&pool.pool)
     .await;
@@ -86,7 +88,7 @@ async fn add_user(
             user: User {
                 name: params.name,
                 email: params.email,
-                password: hashed_password,
+                password: hashed_pwd,
             },
         }),
         Err(e) => panic!("{e:?}"),
@@ -94,7 +96,6 @@ async fn add_user(
 }
 
 async fn delete_user(State(pool): State<AppState>, Json(params): Json<Id>) -> Json<UserBody<Id>> {
-    println!("{params:?}");
     let result = sqlx::query!(
         r#"
         DELETE FROM Users
@@ -119,7 +120,7 @@ async fn delete_user(State(pool): State<AppState>, Json(params): Json<Id>) -> Js
 async fn login(
     State(pool): State<AppState>,
     Json(params): Json<Login>
-) -> Json<UserBody<Login>> {
+) -> Result<Json<UserBody<Login>>, Response<Body>> {
     let result = sqlx::query!(
         r#"
             SELECT email, password
@@ -131,23 +132,15 @@ async fn login(
         .fetch_one(&pool.pool)
         .await;
 
-    let body = result.as_ref().unwrap();
-    let password = body.password.as_ref().unwrap().to_string();
-    let email = body.email.as_ref().unwrap().to_string();
-
-    let chec = verify_password(params.password, &password);
-
     match result {
-        Ok(_) => {
-            Json(UserBody {
-                user: Login {
-                    email: email,
-                    password: password
-                }
-            })
-        }
-        Err(e) => panic!("{e:?}"),
-    }
+        Ok(_) => Ok(Json(UserBody {
+            user: Login {
+                email: params.email,
+                password: params.password 
+            },
+        })),
+        Err(_) => Err(Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap())
+    }   
 }
 
 async fn index() -> Html<&'static str> {
