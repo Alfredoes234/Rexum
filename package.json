@@ -17,7 +17,8 @@
     "@remix-run/serve": "^2.4.1",
     "isbot": "^3.6.8",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@remix-run/dev": "^2.4.1",
@@ -36,5 +37,6 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "packageManager": "pnpm@9.0.0-alpha.5+sha256.9b9b9a4f189d3837e7cfcabed63ab7b4afa6844ed98c6e1705bd70d0d9bef60b"
 }
